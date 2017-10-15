@@ -12,5 +12,26 @@
 */
 
 $router->get('/', function () use ($router) {
-    return $router->app->version();
+
+//	echo '<pre>';
+
+	$start_time = microtime(true);
+
+	$api = new \App\TwitchAPI();
+
+	$status = $api->updateStreamsStatus();
+
+//	echo "Execution time : " . round(microtime(true) - $start_time, 3) . "ms.<br/><br/>";
+
+//	foreach ($status as $login => $value) {
+//		echo "$login est " . ($value ? 'ONLINE.' : 'offline.') . '<br/>';
+//	}
+
+//	echo '</pre>';
+
+	return response()->json([
+		'data'           => $status,
+		'execution_time' => round(microtime(true) - $start_time, 3),
+	]);
+
 });

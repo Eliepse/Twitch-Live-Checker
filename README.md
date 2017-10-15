@@ -1,5 +1,10 @@
 # Twitch-Live-Checker
 
+## Requirements
+
+- php >= 7.1
+- Redis
+
 ## Attributions
 
 This app is built with [Lumen](http://lumen.laravel.com), a php framework.
