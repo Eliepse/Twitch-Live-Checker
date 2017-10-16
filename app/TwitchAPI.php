@@ -4,8 +4,8 @@ namespace App;
 
 use Carbon\Carbon;
 
-use GuzzleHttp\Psr7\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Predis\Client as RedisClient;
 
 class TwitchAPI
@@ -25,7 +25,7 @@ class TwitchAPI
 		$this->token_request_url = 'https://api.twitch.tv/kraken/oauth2/token';
 
 		// Instanciate users
-		$this->getUsers();
+//		$this->getUsers();
 	}
 
 
@@ -52,83 +52,55 @@ class TwitchAPI
 	}
 
 
-	private function fetchUsersData($users = null)
+	public function fetchUsersData(Collection $users)
 	{
 
-		if (is_null($users))
-			$users = $this->getUsers(true);
-
-		// We exclude users without login
-		$users = $users->filter(function ($user) {
-			return $user->has('login');
-		});
-
-		// If no users, return
-		if (empty($users))
-			return;
+		// If no users, stop
+		if ($users->isEmpty())
+			return $users;
 
 		$logins = [];
 
 		foreach ($users as $user) {
-			$logins[] = $user->login;
+			if ($user->hasAttribute('login'))
+				$logins[] = $user->login;
 		}
 
 		$request = $this->requestBuilder('GET', 'https://api.twitch.tv/helix/users', [
-			'login' => $logins,
+			'login' => $users->pluck('login'),
 		], $this->getToken());
 
 		$response = $this->sendRequest($request);
 		$content = $response->getBody()->getContents();
 		$content_array = json_decode($content, true);
-		$dt_now = Carbon::now()->subSeconds(1); // We remove a second to be sure it's outdated
 
 		if (!is_array($content_array['data'])) {
-			return;
+			return $users;
 		}
 
 		foreach ($content_array['data'] as $user) {
 
 			$t_user = $users->first(function ($tuser) use ($user) {
-				return $tuser->login === $user['login'];
+
+				if ($tuser->hasAttribute('login'))
+					return $tuser->login === $user['login'];
+
 			});
 
 			if (empty($t_user))
 				continue;
 
-
-			$t_user->hydrate(array_merge($user, [
-				'expired_at' => $dt_now->copy(),
-			]));
+			$t_user->hydrate($user);
+			$t_user->save();
 
 		}
 
-		$this->cacheUsers($users);
+		return $users;
 
 	}
 
 
-	private function getStreamsStatus(RedisClient $redis, $users = null)
-	{
-
-		$prefix = env('CACHE_KEY_PREFIX', 'twitch_') . 'u_';
-
-		if (is_null($users))
-			$users = $this->getUsers(true);
-
-		$streams = [];
-
-		foreach ($users as $user) {
-			$val = $redis->get($prefix . $user->login);
-//			dd($val);
-			$streams[ $user->login ] = !is_null($val) ? boolval($val) : null;
-		}
-
-		return $streams;
-
-	}
-
-
-	private function fetchUsersStreamsStatut(RedisClient $redis, $users = null, bool $hardReset = false)
+	/*private function fetchUsersStreamsStatut(RedisClient $redis, $users = null, bool $hardReset = false)
 	{
 
 		$prefix = env('CACHE_KEY_PREFIX', 'twitch_') . 'u_';
@@ -195,104 +167,7 @@ class TwitchAPI
 
 		}
 
-	}
-
-
-	/**
-	 * @param bool $withCache
-	 * @return Collection
-	 */
-	public function getUsers(bool $withCache = false): Collection
-	{
-		if (!empty($this->users)) {
-
-			if ($withCache && !$this->user_cache_loaded)
-				$this->loadUsersCache();
-
-			return $this->users;
-		}
-
-		$users = new Collection();
-		$users_login = explode(',', env('TWITCH_USERS', ''));
-
-		foreach ($users_login as $user_login) {
-
-			$user_login = trim($user_login);
-
-			if (empty($user_login))
-				continue;
-
-			$users->push(new TwitchUser($user_login));
-
-		}
-
-		$this->users = $users;
-
-		if ($withCache)
-			$this->loadUsersCache();
-
-		return $this->users;
-
-	}
-
-
-	private function cacheUsers(Collection $twitchUsers)
-	{
-		$prefix = env('CACHE_KEY_PREFIX', 'twitch_');
-		$ttl = env('CACHE_USER_LIFETIME', 600);
-		$path = storage_path('app/' . $prefix . 'users_cache/');
-
-		if (!is_dir($path))
-			mkdir($path, 0774);
-
-		foreach ($twitchUsers as $twitchUser) {
-
-			if ($twitchUser->cacheExpired()) {
-
-				$twitchUser->setExpiredAt(Carbon::now()->addSeconds($ttl));
-
-				file_put_contents($path . $twitchUser->login . '.json', $twitchUser->toJson());
-			}
-
-		}
-	}
-
-
-	private function cacheStreamsStatut(RedisClient $redis, TwitchUser $user, bool $statut)
-	{
-
-		$prefix = env('CACHE_KEY_PREFIX', 'twitch_') . 'u_';
-		$ttl = intval(env('CACHE_STREAM_STATUT_LIFETIME', 60));
-
-		$redis->setex($prefix . $user->login, $ttl, $statut);
-
-	}
-
-
-	private function loadUsersCache()
-	{
-		$prefix = env('CACHE_KEY_PREFIX', 'twitch_');
-		$path = $path = storage_path('app/' . $prefix . 'users_cache/');
-
-		foreach ($this->users as $user) {
-
-			$filepath = $path . $user->login . '.json';
-
-			if (file_exists($filepath)) {
-
-				$user->hydrate(json_decode(file_get_contents($filepath), true));
-
-			}
-		}
-	}
-
-
-	private function getExpiredUsers()
-	{
-		return $this->getUsers(true)->filter(function ($user) {
-			return $user->cacheExpired();
-		});
-	}
+	}*/
 
 
 	protected function joinRequestArrayValue(string $key, array $values): string

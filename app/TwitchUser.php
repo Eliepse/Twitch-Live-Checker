@@ -2,106 +2,46 @@
 
 namespace App;
 
-use Carbon\Carbon;
-use Illuminate\Contracts\Support\Arrayable;
-
-class TwitchUser implements Arrayable
+class TwitchUser extends TwitchModel
 {
 
-	public $live;
-	protected $attributes = [];
-	protected $dates = [
-		'expired_at',
-	];
-//	protected $stream;
-	public $exists = false;
+	protected $primaryKey = 'login';
 
 
-	public function __construct(string $login)
+	/**
+	 * @return \Illuminate\Support\Collection|null
+	 */
+	public static function all()
 	{
-		$this->setAttribute('login', $login);
-	}
+		$names = env('TWITCH_USERS', null);
 
-
-	public function hydrate(array $attributes)
-	{
-		foreach ($attributes as $key => $val) {
-
-			$this->setAttribute($key, $val);
-
-		}
-
-		if (!$this->has('expired_at')) {
-			$this->setAttributes('expired_at', Carbon::now());
-		}
-
-		$this->exists = true;
-
-	}
-
-
-	protected function setAttribute(string $name, $value)
-	{
-		if (array_search($name, $this->dates, true) !== false) {
-
-			if (!is_a($value, Carbon::class)) {
-
-				$value = Carbon::createFromTimestamp($value);
-
-			}
-
-		}
-
-		array_set($this->attributes, $name, $value);
-	}
-
-
-	public function __get($name)
-	{
-		if (!$this->has($name))
+		if (is_null($names))
 			return null;
 
-		return $this->attributes[ $name ];
+		$names = preg_split('/\s*,\s*/', $names);
+
+		return self::findMany($names);
 	}
 
 
-	public function has($name)
+	public static function flushAll()
 	{
-		return array_key_exists($name, $this->attributes);
-	}
 
+		$names = env('TWITCH_USERS', null);
 
-	public function setExpiredAt(Carbon $date)
-	{
-		$this->setAttribute('expired_at', $date);
-	}
+		if (is_null($names))
+			return null;
 
+		$names = preg_split('/\s*,\s*/', $names);
 
-	public function cacheExpired()
-	{
-		return !$this->exists || $this->expired_at->isPast();
-	}
+		foreach ($names as $login) {
 
-
-	public function toArray(): array
-	{
-		$ar = $this->attributes;
-
-		foreach ($this->dates as $key) {
-
-			$ar[ $key ] = $ar[ $key ]->timestamp;
+			$obj = new TwitchUser();
+			$obj->setKey($login);
+			$obj->forget();
 
 		}
 
-		return $ar;
-
-	}
-
-
-	public function toJSON(): string
-	{
-
-		return json_encode($this->toArray());
 	}
 
 }
