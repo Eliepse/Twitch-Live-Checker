@@ -13,25 +13,33 @@
 
 $router->get('/', function () use ($router) {
 
-//	echo '<pre>';
-
 	$start_time = microtime(true);
 
 	$api = new \App\TwitchAPI();
+	$users = \App\TwitchUser::all();
 
-	$status = $api->updateStreamsStatus();
+	$api->fetchUsersData(
+		$users->filter(function (\App\TwitchUser $user) {
+			return $user->isExpired();
+		})
+	);
 
-//	echo "Execution time : " . round(microtime(true) - $start_time, 3) . "ms.<br/><br/>";
+	$stream_to_update = $users->filter(function (\App\TwitchUser $user) {
+		return $user->stream()->isExpired();
+	});
 
-//	foreach ($status as $login => $value) {
-//		echo "$login est " . ($value ? 'ONLINE.' : 'offline.') . '<br/>';
-//	}
+	$api->fetchUsersStreamData($stream_to_update);
 
-//	echo '</pre>';
+	$data = [];
+
+	foreach ($users as $user) {
+		$data[ $user->login ] = $user->stream()->statut();
+	}
 
 	return response()->json([
-		'data'           => $status,
-		'execution_time' => round(microtime(true) - $start_time, 3),
+		'data'            => $data,
+		'updated_streams' => $stream_to_update->pluck('login')->toArray(),
+		'execution_time'  => round(microtime(true) - $start_time, 3),
 	]);
 
 });

@@ -171,8 +171,6 @@ class TwitchModel implements ArrayAccess, Arrayable, Jsonable, Serializable, Jso
 		if (!$this->modified)
 			return;
 
-		var_dump(class_basename(get_called_class()));
-
 		$ttl = $this->cache_lifetime;
 
 		$this->setAttribute('cached_at', Carbon::now());

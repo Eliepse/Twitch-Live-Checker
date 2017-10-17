@@ -23,9 +23,6 @@ class TwitchAPI
 		$this->app_client_id = env('TWITCH_APP_ID', null);
 		$this->app_client_secret = env('TWITCH_APP_SECRET', null);
 		$this->token_request_url = 'https://api.twitch.tv/kraken/oauth2/token';
-
-		// Instanciate users
-//		$this->getUsers();
 	}
 
 
@@ -59,24 +56,16 @@ class TwitchAPI
 		if ($users->isEmpty())
 			return $users;
 
-		$logins = [];
-
-		foreach ($users as $user) {
-			if ($user->hasAttribute('login'))
-				$logins[] = $user->login;
-		}
-
 		$request = $this->requestBuilder('GET', 'https://api.twitch.tv/helix/users', [
-			'login' => $users->pluck('login'),
+			'login' => $users->pluck('login')->toArray(),
 		], $this->getToken());
 
 		$response = $this->sendRequest($request);
 		$content = $response->getBody()->getContents();
 		$content_array = json_decode($content, true);
 
-		if (!is_array($content_array['data'])) {
+		if (!is_array($content_array['data']))
 			return $users;
-		}
 
 		foreach ($content_array['data'] as $user) {
 
@@ -100,74 +89,48 @@ class TwitchAPI
 	}
 
 
-	/*private function fetchUsersStreamsStatut(RedisClient $redis, $users = null, bool $hardReset = false)
+	public function fetchUsersStreamData(Collection $users)
 	{
-
-		$prefix = env('CACHE_KEY_PREFIX', 'twitch_') . 'u_';
-
-		if (is_null($users))
-			$users = $this->getUsers(true);
-
-		// If no hard reset, we remove unexpired values from query
-		if (!$hardReset) {
-
-			$users = $users->filter(function ($user) use ($redis, $prefix) {
-
-				return !boolval($redis->exists($prefix . $user->login));
-
-			});
-
-		}
-
-
-		// We exclude users without id
-		$users = $users->filter(function ($user) {
-			return $user->has('id');
-		});
-
-		// If no users left, we stop
-		if (empty($users))
-			return;
-
-		$users_id = [];
-
-		foreach ($users as $user)
-			$users_id[] = $user->id;
+		// If no users, stop
+		if ($users->isEmpty())
+			return $users;
 
 		$request = $this->requestBuilder('GET', 'https://api.twitch.tv/helix/streams', [
-			'user_id' => $users_id,
+			'user_id' => $users->pluck('id')->toArray(),
 		], $this->getToken());
 
 		$response = $this->sendRequest($request);
 		$content = $response->getBody()->getContents();
 		$content_array = json_decode($content, true);
 
-		if (!is_array($content_array['data'])) {
 
-			foreach ($users as $user) {
-				$this->cacheStreamsStatut($redis, $user, false);
-			}
+		if (!is_array($content_array['data']))
+			return $users;
 
-		} else {
+		$streams = collect($content_array['data']);
 
-			foreach ($users as $user) {
+		foreach ($users as $user) {
 
-				$user_id = $user->id;
+			$stream = $streams->where('user_id', $user->id)->first();
 
-				$stream = array_first($content_array['data'], function ($stream) use ($user_id) {
-					return $stream['user_id'] === $user_id;
-				});
+			if (empty($stream)) {
 
-				if (!empty($stream))
-					$this->cacheStreamsStatut($redis, $user, true);
-				else
-					$this->cacheStreamsStatut($redis, $user, false);
+				$user->stream()->off();
+
+			} else {
+
+				$user->stream()->hydrate($stream);
+				$user->stream()->on();
 
 			}
+
+			$user->save(true);
 
 		}
 
-	}*/
+		return $users;
+
+	}
 
 
 	protected function joinRequestArrayValue(string $key, array $values): string
