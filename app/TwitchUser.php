@@ -7,6 +7,15 @@ class TwitchUser extends TwitchModel
 
 	protected $primaryKey = 'login';
 
+	protected $stream;
+
+
+	public function __construct($params = null)
+	{
+		$this->cache_lifetime = intval(env('CACHE_USER_LIFETIME', 3600));
+		parent::__construct($params);
+	}
+
 
 	/**
 	 * @return \Illuminate\Support\Collection|null
@@ -42,6 +51,20 @@ class TwitchUser extends TwitchModel
 
 		}
 
+	}
+
+
+	public function stream(): TwitchStream
+	{
+
+		if (empty($this->relations['stream']))
+			$this->relations['stream'] = TwitchStream::find($this->getKey());
+
+		if (empty($this->relations['stream']))
+			$this->relations['stream'] = (new TwitchStream())->setAttribute('user_' . $this->getKeyName(), $this->getKey());
+
+
+		return $this->relations['stream'];
 	}
 
 }

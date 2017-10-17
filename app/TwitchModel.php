@@ -25,6 +25,8 @@ class TwitchModel implements ArrayAccess, Arrayable, Jsonable, Serializable, Jso
 
 	protected $cache_driver = null;
 
+	protected $cache_lifetime = 3600;
+
 	protected $primaryKey = 'id';
 
 	protected $key = null;
@@ -36,10 +38,12 @@ class TwitchModel implements ArrayAccess, Arrayable, Jsonable, Serializable, Jso
 		'expired_at',
 	];
 
-	protected $cache_prefix = 'twitch_';
+	protected $cache_prefix = '';
+
+	protected $relations = [];
 
 
-	public function __construct(array $params = null)
+	public function __construct($params = null)
 	{
 		if (!is_null($params))
 			$this->hydrate($params);
@@ -57,7 +61,7 @@ class TwitchModel implements ArrayAccess, Arrayable, Jsonable, Serializable, Jso
 	}
 
 
-	public static function find(string $name)
+	public static function find(string $name): TwitchModel
 	{
 		$object = self::newInstance($name);
 
@@ -109,7 +113,18 @@ class TwitchModel implements ArrayAccess, Arrayable, Jsonable, Serializable, Jso
 
 	public function getCacheIndex(): string
 	{
-		return $this->cache_prefix . $this->getKey();
+		return $this->cache_prefix . class_basename(get_called_class()) . $this->getKey();
+	}
+
+
+	public function hasOne(string $related, string $foreignKey, string $localKey): TwitchRelation
+	{
+
+		$m = new $related();
+
+		$m->setAttribute($foreignKey, $this->getAttribute($localKey));
+
+		return new TwitchRelation($this, $m);
 	}
 
 
@@ -123,30 +138,42 @@ class TwitchModel implements ArrayAccess, Arrayable, Jsonable, Serializable, Jso
 	}
 
 
-	public function load()
+	/**
+	 * @return TwitchModel
+	 */
+	public function load(): TwitchModel
 	{
 		$data = $this->getCacheDriver()->get($this->getCacheIndex());
 
 		if (empty($data))
-			return;
+			return $this;
 
 		$data = unserialize($data);
 
 		if (!is_array($data))
-			return;
+			return $this;
 
 		$this->hydrate($data);
 		$this->cached = true;
 		$this->modified = false;
+
+		return $this;
 	}
 
 
-	public function save()
+	public function save($withRelation = false)
 	{
+		if ($withRelation) {
+			foreach ($this->relations as $relation)
+				$relation->save();
+		}
+
 		if (!$this->modified)
 			return;
 
-		$ttl = intval(env('CACHE_USER_LIFETIME', 3600));
+		var_dump(class_basename(get_called_class()));
+
+		$ttl = $this->cache_lifetime;
 
 		$this->setAttribute('cached_at', Carbon::now());
 		$this->setAttribute('expired_at', Carbon::now()->addSeconds($ttl));
@@ -186,6 +213,8 @@ class TwitchModel implements ArrayAccess, Arrayable, Jsonable, Serializable, Jso
 
 		array_set($this->attributes, $name, $value);
 		$this->modified = true;
+
+		return $this;
 	}
 
 
@@ -234,9 +263,43 @@ class TwitchModel implements ArrayAccess, Arrayable, Jsonable, Serializable, Jso
 	}
 
 
-	public function __get($name)
+	public function getRelation($key)
 	{
-		return $this->getAttribute($name);
+		return $this->relations[ $key ];
+	}
+
+
+	public function setRelation($key, $value)
+	{
+		$this->relations[ $key ] = $value;
+
+		return $this;
+	}
+
+
+	public function relationLoaded($key)
+	{
+		return array_key_exists($key, $this->relations);
+	}
+
+
+	public function __get($key)
+	{
+		if ($this->hasAttribute($key))
+			return $this->getAttribute($key);
+
+		if ($this->relationLoaded($key)) {
+
+			return $this->getRelation($key);
+
+		} else if (method_exists($this, $key)) {
+
+			$this->setRelation($key, $this->$key());
+
+			return $this->getRelation($key);
+		}
+
+		return null;
 	}
 
 
