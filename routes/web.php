@@ -75,12 +75,25 @@ $router->get('/streams/{user_login}/statut', function ($user_login) {
 	if ($user->stream()->isExpired())
 		$api->fetchUsersStreamData(collect([$user]));
 
+	$microtime = round(microtime(true) - $start_time, 3) * 1000;
+
+	$interval = env('APP_STATS_INTERVAL', 10);
+
+	$date = \Carbon\Carbon::now()->startOfDay();
+	$date->addMinutes(floor(\Carbon\Carbon::now()->diffInMinutes($date, true) / $interval))->second(0);
+	$date = $date->timestamp;
+
+	\Illuminate\Support\Facades\DB::statement("
+		INSERT INTO stats_requests(`date`, `interval`, `amount`, `average_exec_time`) VALUES ('$date', $interval, 1, $microtime)
+		ON DUPLICATE KEY UPDATE average_exec_time = ROUND(average_exec_time + (($microtime - average_exec_time) / (amount + 1))), amount = amount + 1
+	");
+
 	return response()->json([
 		'data'           => [
 			$user->getKey() => $user->stream()->isLive,
 		],
-		'timeout'        => intval(env('APP_REQUEST_TIMEOUT', 60)),
-		'execution_time' => round(microtime(true) - $start_time, 3),
+		'timeout'        => intval(env('APP_REQUEST_TIMEOUT', 60)) * 1000,
+		'execution_time' => $microtime,
 	]);
 
 });
